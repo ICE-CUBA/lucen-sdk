@@ -1,0 +1,131 @@
+# wheeled_base/wheeled_base.yaml - configuration of the wheeled_base robot (wheeled biped: 8 leg joints + 2 wheels).
+#
+# Single source of truth: joint table, motor parameters and the policy I/O contract.
+# Training and tools/wheeled_base_io.py (used by tools/wheeled_base_sim2sim.py, wheeled_base_accept.py and
+# wheeled_base_export.py) read this file directly; nothing is generated from it.
+# Units: rad, rad/s, N·m, m, s unless noted. Full guide: wheeled_base/README.md. Safety: docs/safety.md.
+# STATUS: this robot has not been powered on yet.
+#   - The joint table has no CAN id / bus / sign / offset and the file has no `mc02` section; a real-robot
+#     deployment needs them added here. `sign` / `offset` are per-unit calibration values (redo them after
+#     replacing a motor, after re-assembling a joint, and on every other unit), and `mc02.port` must point at
+#     this robot's MC02 board (/dev/mc02 with one board connected, its /dev/serial/by-id/... path with several).
+#   - The motor parameters are per-model values taken from the biped's identification, not measured here.
+
+model:
+  mjcf: wheeled_base/mjcf/wheeled_base.xml
+  urdf: wheeled_base/urdf/wheeled_base.urdf
+  wheel_radius_m: 0.085          # outer radius of the tyre (m); converts wheel angle to distance
+  wheel_track_m: 0.28            # distance between the two wheel centres (m)
+  # wheel_torsional_patch_m: contact-patch radius (m) for torsional friction in the Isaac (PhysX) model. There
+  # the wheel collider is a sphere with a single contact point and no resistance to turning on the spot,
+  # whereas a real tyre has a contact patch that scrubs. 8 mm stands for a patch about 28 mm wide and 10 mm
+  # long; the scrub torque is about friction coefficient x 51 N wheel load x 8 mm. The value is built into the
+  # USD model (wheeled_base/usd).
+  wheel_torsional_patch_m: 0.008
+
+# ---- Joint table ----
+# The order of this list is the joint-vector order used everywhere (= the URDF / MJCF order).
+#   name   joint name in the URDF / MJCF model
+#   motor  motor model; selects the per-model parameters below
+#   drive  position = leg joint, the policy target is a joint angle (rad)
+#          velocity = wheel, the policy target is a wheel speed (rad/s)
+#   range  joint limits [lower, upper] = the URDF limits; leg targets are clamped to it (wheels have none)
+# Not present yet: id / bus / sign / offset (see STATUS above).
+joints:
+  - {name: l_hip_pitch_joint, motor: RS06, drive: position, range: [-1.308997, 1.308997]}
+  - {name: l_hip_roll_joint,  motor: RS06, drive: position, range: [-1.22173, 0.349066]}
+  - {name: l_hip_yaw_joint,   motor: RS00, drive: position, range: [-1.047198, 1.047198]}
+  - {name: l_knee_joint,      motor: RS06, drive: position, range: [0.0, 2.094395]}
+  - {name: l_wheel_joint,     motor: RS02, drive: velocity}
+  - {name: r_hip_pitch_joint, motor: RS06, drive: position, range: [-1.308997, 1.308997]}
+  - {name: r_hip_roll_joint,  motor: RS06, drive: position, range: [-0.349066, 1.22173]}
+  - {name: r_hip_yaw_joint,   motor: RS00, drive: position, range: [-1.047198, 1.047198]}
+  - {name: r_knee_joint,      motor: RS06, drive: position, range: [0.0, 2.094395]}
+  - {name: r_wheel_joint,     motor: RS02, drive: velocity}
+
+# ---- Per-model motor parameters ----
+# NOT measured on this robot: these are per-model values taken from the biped.
+#   tau_limit       torque limit (N·m): the simulation torque clip; on the real robot the same value must
+#                   be written into the motor firmware
+#   vel_limit       speed limit (rad/s) = the motor firmware speed limit; simulation must not exceed it
+#   armature        rotor inertia reflected through the gearbox (kg·m²), identified per motor model
+#   joint_friction  Coulomb friction torque (N·m)
+#   joint_damping   viscous coefficient (N·m·s/rad)
+# To confirm once the robot is powered on: the firmware speed limit of the RS02 when used as a wheel motor
+# (20 rad/s = 1.7 m/s is assumed here), and whether 12 N·m is the right RS06 limit (holding the crouch takes
+# about 3.3 N·m per knee). The reference policy wheeled_base/policies/drive.onnx was trained with the values
+# below and records them in its manifest; tools/wheeled_base_sim2sim.py warns when they differ.
+tau_limit: {RS06: 12.0, RS02: 17.0, RS00: 11.0}
+vel_limit: {RS06: 10.0, RS02: 20.0, RS00: 33.0}
+armature:  {RS06: 0.0070, RS02: 0.0032, RS00: 0.0015}
+joint_friction: {RS06: 0.15, RS02: 0.12, RS00: 0.13}    # Coulomb friction torque (N·m)
+joint_damping: 0.02                                      # viscous coefficient (N·m·s/rad)
+
+# ---- PD gains ----
+# RobStride MIT-mode law, run in the motor firmware and identically in simulation:
+#     tau = clip(kp * (q_des - q) + kd * (v_des - v), ±tau_limit)
+#   legs   (drive: position): q_des = policy target, v_des = 0. Gains = the biped's rl_default profile.
+#   wheels (drive: velocity): kp = 0 (required), v_des = policy target; kd is the velocity-loop gain.
+gains:
+  RS06: {kp: 30.0, kd: 1.5}
+  RS00: {kp: 12.0, kd: 0.6}
+  RS02: {kp: 0.0,  kd: 1.0}
+
+# nominal_pose: leg targets for a zero policy action. The knee angle is the CAD crouch; the hip pitch is chosen
+# so that the centre of mass is directly above the wheel axle, which makes a level body the balance point.
+# Left and right values are equal (the joint axes of the two sides are parallel, see mirror_sign); the pose
+# must stay mirror-symmetric and cover exactly the leg joints.
+nominal_pose:
+  l_hip_pitch_joint: -0.595
+  l_hip_roll_joint:   0.0
+  l_hip_yaw_joint:    0.0
+  l_knee_joint:       1.0
+  r_hip_pitch_joint: -0.595
+  r_hip_roll_joint:   0.0
+  r_hip_yaw_joint:    0.0
+  r_knee_joint:       1.0
+init_base_height: 0.383          # base origin height in the nominal pose (m): the tyres touch at 0.382, plus 1 mm
+
+# ---- Policy I/O contract ----
+# The definition of observations and actions shared by training and tools/wheeled_base_io.py (simulation, and
+# later the real robot); both must agree exactly. tools/wheeled_base_export.py stamps it into the ONNX
+# manifest, and a policy whose manifest disagrees with this section is refused when it is loaded.
+policy:
+  control_rate_hz: 50
+  action_clip: 1.0               # a = clip(network output, ±1); the last_action observation stores the clipped a
+  leg_action_scale: 0.25         # rad:   leg q_des = nominal + 0.25 * a, then clamped to the joint range
+  wheel_action_scale: 20.0       # rad/s: wheel v_des = 20 * a  (= vel_limit.RS02)
+  # history_len: the policy sees the last 10 frames (0.2 s): 10 x 39 = 390 input dims. Layout
+  # (tools/wheeled_base_io.py, build_obs): for each term in `obs` order, its last 10 values from oldest to
+  # newest. The first frame after a reset fills every slot.
+  history_len: 10
+  # Position-hold error (the hold_error observation). Once the command has been zero (|vx| and |wz| commands
+  # both below hold_cmd_thresh) for hold_delay_s, every control step updates
+  #     e_x   <- clip(e_x   - r * (mean wheel-angle increment of the two wheels in this step), ±hold_clip[0])   [m]
+  #     e_yaw <- clip(e_yaw - gyro_z * dt,                                                     ±hold_clip[1])   [rad]
+  # with r = model.wheel_radius_m. e_x is the distance from the hold point (positive = the robot should move
+  # forward). While the command is non-zero, or has been zero for less than hold_delay_s, both are reset to 0.
+  # Only wheel encoder angles and the gyro are used, so the term can be computed on the real robot. Angle
+  # increments are taken modulo 2π, so encoder wrap-around does not matter.
+  hold_cmd_thresh: 0.05
+  hold_delay_s: 1.0
+  hold_clip: [0.3, 0.5]
+  obs:                           # one frame, 39 dims, in this order; scale multiplies the raw quantity
+    - {name: base_ang_vel,      dim: 3,  scale: 0.25}              # gyro, body frame (rad/s)
+    - {name: projected_gravity, dim: 3,  scale: 1.0}               # unit gravity vector in the body frame
+    - {name: commands,          dim: 3,  scale: [2.0, 2.0, 0.25]}  # vx, vy, wz; vy is always 0 (no sideways motion)
+    - {name: leg_pos_rel,       dim: 8,  scale: 1.0}               # 8 leg joints, q - nominal (no wheel angles)
+    - {name: joint_vel,         dim: 10, scale: 0.05}              # all 10 joints, wheel speed included
+    - {name: last_action,       dim: 10, scale: 1.0}               # previous clipped action
+    - {name: hold_error,        dim: 2,  scale: [4.0, 2.0]}        # e_x (m), e_yaw (rad); defined above
+
+# mirror_sign: sign applied to each joint type under left-right mirroring (y -> -y), after swapping the left and
+# right joints. The joint axes of the two sides are parallel, so joints about Y (hip pitch, knee, wheel) keep
+# their sign, while hip roll (about X) and hip yaw (about Z) change it.
+mirror_sign: {hip_pitch: 1, hip_roll: -1, hip_yaw: -1, knee: 1, wheel: 1}
+
+# ---- Observation noise used by the simulation tools ----
+# Uniform white noise per observation channel (± half-width, added before scaling), applied by
+# tools/wheeled_base_sim2sim.py --obs-noise and by the acceptance matrix. These are estimates: the IMU and
+# motor-feedback noise of this robot have not been measured.
+obs_noise: {base_ang_vel: 0.1, projected_gravity: 0.02, leg_pos: 0.01, leg_vel: 0.5, wheel_vel: 0.3}
