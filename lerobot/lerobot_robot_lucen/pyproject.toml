@@ -1,0 +1,19 @@
+# A LeRobot third-party plugin: LeRobot imports every installed distribution whose name
+# starts with `lerobot_robot_` (`register_third_party_plugins`), so the name keeps its
+# underscores. It installs beside LeRobot, from the Lucen SDK's root:
+#     pip install -e lerobot/lerobot_robot_lucen
+[project]
+name = "lerobot_robot_lucen"
+version = "0.1.0"
+description = "Lucen robots for LeRobot: Lucen Arm, a Lucen Arm pair and Lucen Humanoid Arm as thin clients of the Lucen SDK bridge"
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.12"
+dependencies = ["lerobot>=0.6,<0.7"]
+
+[build-system]
+requires = ["uv_build>=0.9.0,<0.10.0"]
+build-backend = "uv_build"
+
+[tool.uv]
+python-preference = "only-managed"
