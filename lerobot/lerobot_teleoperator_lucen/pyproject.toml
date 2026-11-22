@@ -1,0 +1,19 @@
+# A LeRobot third-party plugin: LeRobot imports every installed distribution whose name
+# starts with `lerobot_teleoperator_`, so the name keeps its underscores. It installs beside
+# LeRobot and lerobot_robot_lucen, from the Lucen SDK's root:
+#     pip install -e lerobot/lerobot_robot_lucen -e lerobot/lerobot_teleoperator_lucen
+[project]
+name = "lerobot_teleoperator_lucen"
+version = "0.1.0"
+description = "Teleoperators for Lucen robots in LeRobot: a leader arm (lucen_leader) and a Meta Quest (lucen_quest)"
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.12"
+dependencies = ["lerobot>=0.6,<0.7", "lerobot_robot_lucen>=0.1,<0.2", "mujoco==3.12.0"]
+
+[build-system]
+requires = ["uv_build>=0.9.0,<0.10.0"]
+build-backend = "uv_build"
+
+[tool.uv]
+python-preference = "only-managed"

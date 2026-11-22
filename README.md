@@ -20,6 +20,7 @@ All four use the same RobStride actuators, the same motor driver, and the same M
 | Bring your own walking policy to biped_Laika | [`biped_Laika/README.md`](biped_Laika/README.md) |
 | Train and validate a wheeled_base policy | [`wheeled_base/README.md`](wheeled_base/README.md) |
 | Operate humanoid_arm or Arm | [`docs/arm_guide.md`](docs/arm_guide.md), then [`humanoid_arm/README.md`](humanoid_arm/README.md) or [`Arm/README.md`](Arm/README.md) |
+| Record demonstrations, train and run policies on Arm with LeRobot | [`docs/lerobot.md`](docs/lerobot.md) |
 | Know what protects you and the robot | [`docs/safety.md`](docs/safety.md) — read before powering anything |
 | Let an AI coding agent work with the SDK for you | [`AGENTS.md`](AGENTS.md) — agents read it automatically; it tells them what they may run on their own and what needs your confirmation |
 | Wire, check or re-flash the MC02 board | [`docs/mc02.md`](docs/mc02.md), [`docs/mc02_protocol.md`](docs/mc02_protocol.md) |
@@ -68,9 +69,10 @@ biped_Laika/    wheeled_base/    humanoid_arm/    Arm/
     policies/         reference policies (biped_Laika, wheeled_base)
     README.md         the guide for that robot
 bridge.py           bridge process: owns the MC02 board, talks to the motors at 50 Hz, serves a TCP port
+lerobot/            LeRobot plugins: lucen_arm, lucen_arm_pair (robots) and lucen_leader (teleoperator)
 robstride_mit.py    RobStride motor driver
 tools/              command-line tools (see below)
-docs/               connection, safety, arm operation, MC02 board
+docs/               connection, safety, arm operation, LeRobot, MC02 board
 LICENSE, NOTICE     Apache License 2.0
 ```
 
