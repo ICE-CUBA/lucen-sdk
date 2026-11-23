@@ -104,10 +104,11 @@ lerobot-teleoperate $FOLLOWER $LEADER --teleop.gravity_calibration=true \
   the gravity feed-forward. Push it past a small threshold and it follows your hand; let go and it stays where it
   is. The follower copies its joint angles, speed-limited, and skips a step that would make it hit itself in the
   model. The follower's gripper follows the leader's.
-- With `--teleop.gravity_calibration=true` **both arms move on their own for about 20 s** at the start: they
+- With `--teleop.gravity_calibration=true` **both arms move on their own for about 10 s** at the start: they
   visit two poses and return home, to measure what the gravity feed-forward misses. The log then prints
   `Gravity calibration done …` and, when it matters, a `feed-forward hint`: add it to the bridge's
-  `--grav-scale` (`--robot.grav_scale=… --teleop.grav_scale=…`) and the leader gets lighter.
+  `--grav-scale` (`--robot.grav_scale=… --teleop.grav_scale=…`) and the leader gets lighter. On Lucen's own
+  pair the yaml's `gravity_ff.scale: 0.53` left a hint of about −0.05: nothing to change.
 - **Stop with one Ctrl-C** and wait: the follower, then the leader, fold to the stowed pose (about 20 s each)
   before the motors turn off. A second Ctrl-C during that, or killing the process, turns the motors off where
   the arms are, and they drop.

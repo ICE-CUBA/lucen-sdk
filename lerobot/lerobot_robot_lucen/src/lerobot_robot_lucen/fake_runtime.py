@@ -43,8 +43,13 @@ class FakeArmRuntime:
         speed: float = SPEED_RAD_S,
         client_timeout_s: float = CLIENT_TIMEOUT_S,
         boot_grace_s: float = BOOT_GRACE_S,
+        first_report_s: Mapping[str, float] | None = None,
     ) -> None:
+        """`first_report_s`: joints whose first position arrives that many seconds after
+        `start()`, as a runtime started a moment ago reports some motors later than others."""
         self.known = list(joints)
+        self.first_report_s = dict(first_report_s or {})
+        self._started_at = math.inf
         self.q = {j: float((start or {}).get(j, 0.0)) for j in self.known}
         self.speed = speed
         self.client_timeout_s = client_timeout_s
@@ -72,6 +77,7 @@ class FakeArmRuntime:
         return f"127.0.0.1:{self.port}"
 
     def start(self) -> FakeArmRuntime:
+        self._started_at = time.monotonic()
         for thread in self._threads:
             thread.start()
         return self
@@ -177,8 +183,13 @@ class FakeArmRuntime:
             if self.mode == "send" and time.monotonic() - last_rx > allow:
                 self._event("timeout", after_s=round(time.monotonic() - last_rx, 2))
                 return
+            up_s = time.monotonic() - self._started_at
             with self.lock:
-                snapshot = {j: self.q[j] for j in self.active} if self.mode != "idle" else {}
+                snapshot = (
+                    {j: self.q[j] for j in self.active if up_s >= self.first_report_s.get(j, 0.0)}
+                    if self.mode != "idle"
+                    else {}
+                )
             if snapshot:
                 try:
                     send({"q": snapshot})

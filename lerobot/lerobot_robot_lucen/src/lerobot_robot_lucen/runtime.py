@@ -169,8 +169,18 @@ class RuntimeLink:
         if mode == "send":
             start = finite(self._expect(line, "q0").get("q0") or {})
         else:
-            # Watch streams positions at once: the first one is where the arm is.
+            # Watch streams positions at once: they are where the arm is. A runtime started a
+            # moment ago reports some motors later than others (the bench, 2026-11-22:
+            # follower_joint5 and joint6 a beat after the rest), so the start gathers until
+            # every joint has reported, for as long as the hello may take.
             start = finite(self._expect(line, "q").get("q") or {})
+            deadline = time.monotonic() + self.connect_timeout_s
+            while time.monotonic() < deadline and any(j not in start for j in self.joints):
+                message = line.read(deadline - time.monotonic())
+                if message is None:
+                    break
+                if "q" in message:
+                    start.update(finite(message["q"]))
             missing = [j for j in self.joints if j not in start]
             if missing:
                 sock.close()
