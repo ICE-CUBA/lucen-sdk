@@ -13,7 +13,8 @@ Read [`safety.md`](safety.md) first. The arms have no brake: an arm whose motors
   arm. Both are on **one MC02 board**: the follower on CAN1 (ids 1–7), the leader on CAN2 (ids 8–14). The
   configuration is `Arm/Arm_pair.yaml` (bridge port 9881).
 - The MC02's USB in **your own computer** (Linux), which drives the arm; with an NVIDIA GPU it also trains and
-  runs the policy. 48 V to the motors, with the **emergency stop within reach** whenever the motors are on.
+  runs the policy, and without one MouseMouse does both (steps 6 and 7). 48 V to the motors, with the
+  **emergency stop within reach** whenever the motors are on.
 - A wrist camera on the follower (USB); a fixed camera over the table is optional.
 - For training: that computer's NVIDIA GPU, or a MouseMouse account (Lucen's hub, cloud GPUs).
 
@@ -193,6 +194,29 @@ lerobot-rollout --strategy.type=base --policy.path=./cup-act/policy \
     --policy.device=cuda $FOLLOWER --robot.cameras="{ wrist: {...}, top: {...}}" \
     --task="Put the cup on the plate" --duration=60
 ```
+
+**On MouseMouse**, when your computer has no GPU: the hub serves the policy, and your computer runs the same
+`lerobot-rollout` and asks the hub for each chunk of actions. Once, in LeRobot's environment:
+
+```bash
+uv pip install -e lerobot/lerobot_policy_lucen                # brings lucen-device, the hub's robot-side driver
+lucen auth login --url https://api.mousemouse.ai               # a key with the train scope
+lucen-device register --robot lucen/laika-arm --name my-arm-pc --adapter lerobot-rollout --trust approved
+```
+
+Each time, start an endpoint for the policy (it prints its id, `ep_…`) and run with that endpoint as the policy:
+
+```bash
+lucen endpoints create you/<the run's model repo> --executor modal --max-hours 2
+lerobot-rollout --strategy.type=base --policy.type=lucen_endpoint --policy.endpoint=ep_... \
+    $FOLLOWER --robot.cameras="{ wrist: {...}, top: {...}}" \
+    --task="Put the cup on the plate" --duration=60
+```
+
+The command prints a hub page and waits there: the arm moves only after a person approves the run on that page.
+A chunk of actions that arrives late is dropped and the arm holds where it is for that step; if the connection
+drops, the arm holds and the computer reconnects. The hub serves ACT (without temporal ensembling) and SmolVLA
+fine-tuned from `lerobot/smolvla_base`; run other policies on your own GPU.
 
 - Only the follower is enabled; the leader stays off. Every target the policy sends is held within 0.35 rad of
   the measured position (0.25 rad on the gripper), inside the joint limits, and the bridge limits its speed.
