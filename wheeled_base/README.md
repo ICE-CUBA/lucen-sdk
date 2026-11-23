@@ -17,7 +17,7 @@ The authoritative configuration is `wheeled_base.yaml`; the numbers below come f
 | `urdf/wheeled_base.urdf` | URDF |
 | `mjcf/wheeled_base.xml` | MuJoCo model |
 | `usd/wheeled_base.usd` | Isaac Lab asset |
-| `meshes/` | STL meshes, simplified for display and collision. Mass, centre of mass and inertia come from the URDF / MJCF, not from the meshes |
+| `meshes/` | STL meshes for display and collision: the outer shape of each part only, at most about 2,000 faces a part. The USD carries the same meshes. Mass, centre of mass and inertia come from the URDF / MJCF, not from the meshes |
 
 Wheel radius 0.085 m; distance between wheel centres 0.28 m.
 
