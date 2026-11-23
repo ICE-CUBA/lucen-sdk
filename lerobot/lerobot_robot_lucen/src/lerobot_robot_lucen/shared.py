@@ -20,8 +20,11 @@ policy (`_Link` in `tools/dream_driver.py` of the robot software):
   within a leash of the measured position (0.35 rad, 0.25 on a gripper): an arm that is
   blocked or holding something pushes with a bounded torque instead of winding up. The
   leader's LeadFollow bounds its own (a speed cap, a collision pre-check, a gripper lead)
-  and is not leashed: a leash would also cut the gravity compensation it learns, and its
-  feed-forward hint would come out wrong;
+  and adds the gravity sag it learns (up to 0.6 rad), which a leash would cut, and its
+  feed-forward hint would come out wrong. So the leader's joints are claimed without the
+  leash, and the follower targets LeadFollow computes are vouched for (`vouch`) and go out
+  as they are. Every other target on the follower keeps the leash: a policy driving it
+  while a leader is connected is leashed like any other;
 - an arm is parked before it is let go (`park`): this arm has no brake, so a released
   arm falls. The route is the driver's: shoulder, elbow and wrist to the upright rest
   pose with the base and the wrist roll unchanged, then the base and the wrist roll to
@@ -37,6 +40,7 @@ where they are. The 48 V stop stays within reach.
 from __future__ import annotations
 
 import atexit
+import collections
 import contextlib
 import json
 import math
@@ -57,6 +61,9 @@ PARK_SPEED_RAD_S: Final[float] = 0.45
 PARK_TOLERANCE_RAD: Final[float] = 0.15
 STALE_S: Final[float] = 1.0
 OPEN_TIMEOUT_S: Final[float] = 8.0
+#: How many of a joint's latest vouched values still count when a target arrives (`vouch`):
+#: five of LeadFollow's 50 Hz ticks, 0.1 s from the snapshot LeRobot takes to its send.
+VOUCH_DEPTH: Final[int] = 5
 #: The upright rest pose the park route passes through (a yaml's `routine.rest` overrides
 #: it): the arm vertical, the least gravity torque, off every stop.
 REST_POSE: Final[dict[str, float]] = {"joint2": 1.44, "joint3": 2.40, "joint4": 0.54}
@@ -106,8 +113,14 @@ class SharedRuntime:
         self.joints: list[str] = []
         self.limits: dict[str, tuple[float, float]] = {}
         self.grippers: set[str] = set()
-        #: Joints a user bounds itself (see `claim`): sent without the leash.
+        #: Joints some user claimed with the leash: they keep it, whoever else claims them.
+        self.leashed: set[str] = set()
+        #: Joints only users that bound them themselves claimed (see `claim`): sent unleashed.
         self.unleashed: set[str] = set()
+        #: joint -> the latest values a self-bounding user handed out for it (see `vouch`).
+        self._vouched: dict[str, collections.deque[float]] = {}
+        #: Joints whose present target was one of those values when it was set.
+        self._as_vouched: set[str] = set()
         self.users: set[str] = set()
         #: user -> how to park its arm (prefix, home, rest, speed), once it is connected.
         self.parking: dict[str, tuple[str, dict[str, float], dict[str, float] | None, float]] = {}
@@ -140,7 +153,9 @@ class SharedRuntime:
         `leash=False`: the user keeps its own bounds on these joints (LeadFollow: a speed cap,
         a collision pre-check, a gripper lead), so the session sends its targets as they are,
         as the SDK's own lead-follow tool does. The leash is for targets nothing else
-        bounds: a policy's.
+        bounds: a policy's. A leashed claim wins: a joint any user claims with the leash
+        keeps it, in whatever order the claims come (a self-bounding user that hands out
+        targets for such a joint vouches for them instead, see `vouch`).
         """
         joints = list(joints)
         with self._lock:
@@ -157,9 +172,33 @@ class SharedRuntime:
                 lo, hi = limits[joint]
                 self.limits[joint] = (float(lo), float(hi))
             self.grippers.update(grippers)
-            if not leash:
-                self.unleashed.update(joints)
+            if leash:
+                self.leashed.update(joints)
+                self.unleashed.difference_update(joints)
+            else:
+                self.unleashed.update(j for j in joints if j not in self.leashed)
             self.users.add(user)
+
+    def vouch(self, values: Mapping[str, float]) -> None:
+        """A self-bounding user hands out these exact targets for leashed joints it bounds but
+        does not own (LeadFollow's follower targets, which LeRobot sends through the follower
+        robot): such a target goes out as it is when it arrives while still among the joint's
+        last `VOUCH_DEPTH` vouched values. Any other target on the joint keeps the leash."""
+        self._check(values)
+        with self._lock:
+            for joint, value in values.items():
+                recent = self._vouched.get(joint)
+                if recent is None:
+                    recent = self._vouched[joint] = collections.deque(maxlen=VOUCH_DEPTH)
+                recent.append(float(value))
+
+    def forget(self, joints: Iterable[str]) -> None:
+        """Nothing vouched for `joints` counts any more, the present target included (the user
+        that vouched stopped or let go)."""
+        with self._lock:
+            for joint in joints:
+                self._vouched.pop(joint, None)
+                self._as_vouched.discard(joint)
 
     # -- the session ---------------------------------------------------------------
 
@@ -286,13 +325,14 @@ class SharedRuntime:
 
     def outgoing(self) -> dict[str, float]:
         """The target this tick sends: each joint's within the limits, and within the leash of
-        its measured position unless a user bounds it itself."""
+        its measured position unless only users that bound it themselves claimed it, or the
+        target was vouched for when it arrived (LeadFollow's own, see `vouch`)."""
         with self._lock:
             out: dict[str, float] = {}
             for joint in self.joints:
                 q = self._q[joint]
                 goal = self._target.get(joint, q)
-                if joint not in self.unleashed:
+                if joint not in self.unleashed and joint not in self._as_vouched:
                     lead = GRIPPER_LEASH_RAD if joint in self.grippers else LEASH_RAD
                     goal = min(max(goal, q - lead), q + lead)
                 lo, hi = self.limits[joint]
@@ -331,15 +371,26 @@ class SharedRuntime:
         return {j: q[j] for j in names if j in q}
 
     def set_target(self, goal: Mapping[str, float]) -> None:
-        """Ask for `goal` (radians, runtime names). The sender leashes, clamps and sends it."""
+        """Ask for `goal` (radians, runtime names). The sender leashes, clamps and sends it.
+
+        A value equal to one of the joint's latest vouched values (`vouch`) is LeadFollow's
+        own and is sent unleashed for as long as it stays the target; anything else is not."""
+        self._check(goal)
+        with self._lock:
+            for joint, value in goal.items():
+                target = self._target[joint] = float(value)
+                if target in self._vouched.get(joint, ()):
+                    self._as_vouched.add(joint)
+                else:
+                    self._as_vouched.discard(joint)
+
+    def _check(self, goal: Mapping[str, float]) -> None:
         unknown = [j for j in goal if j not in self.limits]
         if unknown:
             raise RuntimeRefused(f"No joint named {', '.join(unknown)} on this session.")
         bad = [j for j, v in goal.items() if not (isinstance(v, int | float) and math.isfinite(v))]
         if bad:
             raise RuntimeRefused(f"Refusing a target that is not a number for {', '.join(bad)}.")
-        with self._lock:
-            self._target.update({j: float(v) for j, v in goal.items()})
 
     def targets(self, joints: Iterable[str]) -> dict[str, float]:
         with self._lock:
@@ -576,6 +627,7 @@ __all__ = [
     "PARK_SPEED_RAD_S",
     "REST_POSE",
     "SEND_HZ",
+    "VOUCH_DEPTH",
     "PrefixedBus",
     "SharedRuntime",
     "session_for",

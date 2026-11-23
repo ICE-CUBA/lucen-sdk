@@ -15,7 +15,9 @@ check are tuned on the real arms and live with them. This module only runs it at
 its own 50 Hz on the shared session: the leader's targets go straight to the bridge;
 the follower's are handed to LeRobot as the action, which the follower robot
 (`lucen_arm --robot.prefix=follower_`) sends — so what is recorded is what the
-follower was told.
+follower was told. The leader's joints are claimed without the session's leash; the
+follower's keep it, and the targets LeadFollow computes for them are vouched for
+(`SharedRuntime.vouch`), so they alone go out with their gravity compensation intact.
 """
 
 from __future__ import annotations
@@ -120,9 +122,21 @@ class BenchLeader:
         self.home = {n: float(v) for n, v in (cfg.get("home_pose") or {}).items()}
         self.rest = dict((cfg.get("routine") or {}).get("rest") or {}) or None
         # LeadFollow bounds its own targets (speed cap, collision pre-check, gripper lead), as in
-        # the SDK's lead-follow tool; a session leash would also cut its gravity compensation
-        # (with the bridge at 0.35 of the model's gravity the hint read +1.00, its cap, for +0.65).
-        shared.claim(user, lf.names, lf.limits, grippers=lf.grippers, leash=False)
+        # the SDK's lead-follow tool, and adds the gravity sag it learns to every one of them, the
+        # follower's too; a session leash would cut that compensation (with the bridge at 0.35 of
+        # the model's gravity the hint read +1.00, its cap, for +0.65). The leader's joints are
+        # this teleoperator's alone: claimed without the leash. The follower's keep it: what
+        # LeadFollow computes for them is vouched for in `_run` and goes out as it is, and any
+        # other target there (a policy's, while this leader is connected) is leashed.
+        others = [n for n in lf.names if n not in self.leader_names]
+        shared.claim(
+            user,
+            self.leader_names,
+            lf.limits,
+            grippers=[n for n in lf.grippers if n in self.leader_names],
+            leash=False,
+        )
+        shared.claim(user, others, lf.limits, grippers=[n for n in lf.grippers if n in others])
         self._lock = threading.Lock()
         self._follower: dict[str, float] = {}
         self._stop = threading.Event()
@@ -162,8 +176,10 @@ class BenchLeader:
         self.lf.start(q)
         if self.park_on_disconnect:  # parked before the session ends, whoever ends it
             self.shared.hold(self.user, self.leader_prefix, self.home, self.rest)
+        follower = {n: self.lf.tgt[n] for n in self.follower_names if n in self.lf.tgt}
+        self.shared.vouch(follower)
         with self._lock:
-            self._follower = {n: self.lf.tgt[n] for n in self.follower_names if n in self.lf.tgt}
+            self._follower = follower
         if gravity_calibration:
             self.lf.calibrate()  # both arms go to two poses, hold a few seconds, come home
         self._stop.clear()
@@ -201,17 +217,24 @@ class BenchLeader:
                 q = self.shared.positions(self.lf.names)
                 cmd = self.lf.tick(q, max(1e-3, min(0.1, tick - last)))
                 last = tick
+                follower = {n: cmd[n] for n in self.follower_names if n in cmd}
+                # Vouched for before anything can send it (this loop in pose mode, or LeRobot
+                # through the follower robot): LeadFollow's own follower targets, and only
+                # those, go out without the follower's leash.
+                self.shared.vouch(follower)
                 if self.lf.mode == "pose":  # calibrating, or going to a pose: drive both arms
                     self.shared.set_target(cmd)
                 else:
                     self.shared.set_target({n: cmd[n] for n in self.leader_names if n in cmd})
                 with self._lock:
-                    self._follower = {n: cmd[n] for n in self.follower_names if n in cmd}
+                    self._follower = follower
             except RuntimeRefused as exc:
                 self.error = str(exc)
+                self.shared.forget(self.follower_names)
                 return
             except Exception as exc:
                 self.error = f"the leader loop stopped: {type(exc).__name__}: {exc}"
+                self.shared.forget(self.follower_names)
                 return
             time.sleep(max(0.0, dt - (self.clock() - tick)))
 
@@ -230,6 +253,7 @@ class BenchLeader:
         if self._thread is not None:
             self._thread.join(timeout=1.0)
             self._thread = None
+        self.shared.forget(self.follower_names)  # the follower's present target is leashed again
         try:
             if park and self.connected and self.shared.alive():
                 self.shared.park(self.leader_prefix, self.home, self.rest)
