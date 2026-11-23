@@ -1,0 +1,22 @@
+# A LeRobot third-party plugin: LeRobot imports every installed distribution whose name
+# starts with `lerobot_policy_` (`register_third_party_plugins`), so the name keeps its
+# underscores. It installs beside LeRobot and the robot's own plugin:
+#     pip install -e lerobot/lerobot_policy_lucen
+# Its one policy type, `lucen_endpoint`, takes its actions from a MouseMouse hub endpoint
+# through `lucen-device` (the driver's consent layer), so a computer with no GPU runs the
+# same `lerobot-rollout` line as one that has.
+[project]
+name = "lerobot_policy_lucen"
+version = "0.1.0"
+description = "A MouseMouse hub endpoint as a LeRobot policy: lerobot-rollout with --policy.type=lucen_endpoint"
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.12"
+dependencies = ["lerobot>=0.6,<0.7", "lucen-device>=0.4.1,<0.5"]
+
+[build-system]
+requires = ["uv_build>=0.9.0,<0.10.0"]
+build-backend = "uv_build"
+
+[tool.uv]
+python-preference = "only-managed"

@@ -69,7 +69,8 @@ biped_Laika/    wheeled_base/    humanoid_arm/    Arm/
     policies/         reference policies (biped_Laika, wheeled_base)
     README.md         the guide for that robot
 bridge.py           bridge process: owns the MC02 board, talks to the motors at 50 Hz, serves a TCP port
-lerobot/            LeRobot plugins: lucen_arm, lucen_arm_pair (robots) and lucen_leader (teleoperator)
+lerobot/            LeRobot plugins: lucen_arm, lucen_arm_pair (robots), lucen_leader (teleoperator) and
+                    lucen_endpoint (a policy served by MouseMouse)
 robstride_mit.py    RobStride motor driver
 tools/              command-line tools (see below)
 docs/               connection, safety, arm operation, LeRobot, MC02 board
