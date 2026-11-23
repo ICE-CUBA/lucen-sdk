@@ -12,10 +12,10 @@ Read [`safety.md`](safety.md) first. The arms have no brake: an arm whose motors
 - **Two identical Lucen Arms**, a follower and a leader. An owner of one arm leads it with a second, identical
   arm. Both are on **one MC02 board**: the follower on CAN1 (ids 1–7), the leader on CAN2 (ids 8–14). The
   configuration is `Arm/Arm_pair.yaml` (bridge port 9881).
-- The MC02's USB in **your computer** (Linux; a Jetson works). 48 V to the motors, with the **emergency stop
-  within reach** whenever the motors are on.
+- The MC02's USB in **your own computer** (Linux), which drives the arm; with an NVIDIA GPU it also trains and
+  runs the policy. 48 V to the motors, with the **emergency stop within reach** whenever the motors are on.
 - A wrist camera on the follower (USB); a fixed camera over the table is optional.
-- For training: a computer with an NVIDIA GPU, or a MouseMouse account (Lucen's hub, cloud GPUs).
+- For training: that computer's NVIDIA GPU, or a MouseMouse account (Lucen's hub, cloud GPUs).
 
 How the pieces fit: the plugins are clients of the SDK's bridge (`bridge.py`), which owns the MC02, clamps
 every target to the joint limits, limits speed and turns the motors off when its client goes quiet. The
@@ -37,10 +37,6 @@ uv pip install "lerobot[dataset,core-scripts]==0.6.1" python-can \
     -e lerobot/lerobot_robot_lucen -e lerobot/lerobot_teleoperator_lucen
 ```
 
-- On a **Jetson**, install the CPU build of PyTorch before LeRobot:
-  `uv pip install "torch==2.11.*" "torchvision==0.26.*" --index-url https://download.pytorch.org/whl/cpu`.
-  NVIDIA's CUDA PyTorch for JetPack 6 is built for Python 3.10 only. Recording and running an ACT policy work
-  on the CPU; train on a GPU computer.
 - `python-can` is there because zeroing writes the configuration with `tools/calib_arm.py`, which imports the
   motor driver.
 - LeRobot finds the plugins by their package names: after this install every `lerobot-*` command knows
@@ -139,7 +135,7 @@ lerobot-record $FOLLOWER $LEADER \
 
 ## 6. Train
 
-**On your own GPU** (copy the dataset folder there first):
+**On your own GPU**, on the computer the arm is plugged into: the dataset is already there.
 
 ```bash
 lerobot-train --dataset.repo_id=you/cup --policy.type=act --policy.device=cuda \
@@ -148,6 +144,14 @@ lerobot-train --dataset.repo_id=you/cup --policy.type=act --policy.device=cuda \
 
 Any LeRobot policy trains on the dataset (`--policy.type=diffusion`, or `--policy.path=lerobot/smolvla_base` to
 fine-tune SmolVLA). ACT's default is 100,000 steps; on an RTX 5070 that is about 3.6 hours at batch 8.
+
+Recorded on another computer? Copy the dataset folder to the same place on the GPU computer first, so the command
+above finds it by its name. From the computer that recorded it (send it again after you record more episodes):
+
+```bash
+ssh <user>@<GPU computer> "mkdir -p ~/.cache/huggingface/lerobot/you/cup"
+tar -C ~/.cache/huggingface/lerobot/you/cup -cf - . | ssh <user>@<GPU computer> "tar -C ~/.cache/huggingface/lerobot/you/cup -xf -"
+```
 
 **On MouseMouse** (Lucen's hub, a cloud GPU): push the dataset, queue a run, pull the policy.
 
@@ -173,9 +177,20 @@ joint names against the robot.
 
 ## 7. Run the policy on the follower
 
+On your computer's GPU:
+
 ```bash
 lerobot-rollout --strategy.type=base --policy.path=outputs/cup-act/checkpoints/last/pretrained_model \
-    --policy.device=cpu $FOLLOWER --robot.cameras="{ wrist: {...}, top: {...}}" \
+    --policy.device=cuda $FOLLOWER --robot.cameras="{ wrist: {...}, top: {...}}" \
+    --task="Put the cup on the plate" --duration=60
+```
+
+A policy pulled from MouseMouse: its `policy/` folder is the checkpoint. Run the same command from the folder you
+pulled it into, with `--policy.path` on that folder:
+
+```bash
+lerobot-rollout --strategy.type=base --policy.path=./cup-act/policy \
+    --policy.device=cuda $FOLLOWER --robot.cameras="{ wrist: {...}, top: {...}}" \
     --task="Put the cup on the plate" --duration=60
 ```
 
@@ -183,9 +198,6 @@ lerobot-rollout --strategy.type=base --policy.path=outputs/cup-act/checkpoints/l
   the measured position (0.25 rad on the gripper), inside the joint limits, and the bridge limits its speed.
   At the end, or on one Ctrl-C, the follower folds to its stowed pose before its motors turn off.
 - The cameras must be the ones the policy was trained with: same names, same size.
-- On a Jetson's CPU one ACT forward pass takes about 0.4 s at 640×480 (0.15 s at 320×240), once per chunk of
-  actions, so the arm pauses that long every few seconds. Diffusion Policy and SmolVLA are too slow on a CPU;
-  run them on a GPU.
 
 ## Both arms as one robot
 
@@ -194,7 +206,7 @@ lerobot-rollout --strategy.type=base --policy.path=outputs/cup-act/checkpoints/l
 a bimanual policy or teleoperator:
 
 ```bash
-lerobot-rollout --strategy.type=base --policy.path=<a bimanual policy> --policy.device=cpu \
+lerobot-rollout --strategy.type=base --policy.path=<a bimanual policy> --policy.device=cuda \
     --robot.type=lucen_arm_pair --robot.arm_config=$CFG --robot.bridge_python=$HOME/lucen_env/bin/python \
     --robot.cameras="{ left_wrist: {...}, right_wrist: {...}, top: {...}}" --task="..." --duration=60
 ```
@@ -246,8 +258,6 @@ calibration should report a hint of about `+0.65`.
 - **"No module named 'accelerate'", or another LeRobot version is imported** — an older LeRobot is on your
   `PYTHONPATH`: `unset PYTHONPATH`.
 - **The keys n / r / q do nothing** — run the command in an interactive terminal (`ssh -t` over SSH).
-- **A policy pauses every few seconds on a Jetson** — CPU inference of a chunked policy: record smaller images
-  (320×240), or run the policy on a GPU.
 - **The process was killed (kill -9, a crash, a lost SSH session without `nohup`)** — the bridge turns the
   motors off within 1.5 s and the arms drop from where they are. Stop with one Ctrl-C, and keep the emergency
   stop within reach.

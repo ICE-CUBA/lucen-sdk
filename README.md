@@ -23,7 +23,7 @@ All four use the same RobStride actuators, the same motor driver, and the same M
 | Record demonstrations, train and run policies on Arm with LeRobot | [`docs/lerobot.md`](docs/lerobot.md) |
 | Know what protects you and the robot | [`docs/safety.md`](docs/safety.md) — read before powering anything |
 | Let an AI coding agent work with the SDK for you | [`AGENTS.md`](AGENTS.md) — agents read it automatically; it tells them what they may run on their own and what needs your confirmation |
-| Wire, check or re-flash the MC02 board | [`docs/mc02.md`](docs/mc02.md), [`docs/mc02_protocol.md`](docs/mc02_protocol.md) |
+| Wire, check or re-flash the MC02 board | [`docs/mc02.md`](docs/mc02.md) |
 
 ## Supplied with your robot
 
