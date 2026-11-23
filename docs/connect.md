@@ -10,7 +10,7 @@ your computer ──network──> robot computer (Jetson) ──USB──> MC02
 - The **MC02 board** is a USB device with two CAN buses and an IMU. It is the only path between the SDK and
   the motors, and appears as one serial port (`/dev/mc02`). See [`mc02.md`](mc02.md).
 - The **robot computer** is whichever machine the MC02 is plugged into. On biped_Laika it is the Jetson inside
-  the body. For the arms it is a Jetson next to the robot — or simply your own computer.
+  the body. The arms come without one: for them it is your own computer.
 - The motors' 48 V supply does not pass through the MC02. The emergency stop cuts that supply.
 
 ## 1. Choose how to connect

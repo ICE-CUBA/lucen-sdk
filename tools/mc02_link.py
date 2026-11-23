@@ -5,8 +5,8 @@
 The MC02 board is one USB CDC serial device that carries both CAN buses and the IMU samples. The board
 forwards CAN frames as they are; building and parsing motor frames stays on the host (robstride_mit.py).
 Packets are COBS-framed with a CRC16-CCITT-FALSE, all fields little-endian. The constants below have the
-same values as in the firmware, and PROTO_VER must be equal on both sides. Protocol reference:
-docs/mc02_protocol.md; board, wiring and flashing: docs/mc02.md.
+same values as in the firmware, and PROTO_VER must be equal on both sides. Board, wiring and flashing:
+docs/mc02.md.
 
 Needs pyserial. python-can is not needed: MC02CanBus duck-types the three methods that
 robstride_mit.LegBus uses (send / recv / shutdown).
@@ -44,7 +44,7 @@ DEFAULT_PORT = "/dev/mc02"
 # usb-Lucen_Robotics_Lucen_MC02_v1_<serial>-if00
 BY_ID_GLOB = "/dev/serial/by-id/*Lucen_MC02_v1*"
 
-# ---- message types (same values as in the firmware; packet layouts: docs/mc02_protocol.md) ----
+# ---- message types (same values as in the firmware) ----
 # host -> board
 MSG_CAN_TX, MSG_PING, MSG_WD_CFG, MSG_FAILSAFE_SET = 0x01, 0x02, 0x03, 0x04
 MSG_TIME_SYNC, MSG_IMU_CFG, MSG_STATUS_REQ, MSG_DFU_JUMP = 0x05, 0x06, 0x07, 0x08
